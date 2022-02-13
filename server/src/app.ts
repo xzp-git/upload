@@ -2,7 +2,7 @@ import express, {Request, Response, NextFunction} from 'express'
 import logger from 'morgan'
 import { StatusCodes } from 'http-status-codes'
 import createError from 'http-errors'
-// import cors from 'cors'
+import cors from 'cors'
 import path  from 'path'
 import fs from 'fs-extra'
 import multiparty from 'multiparty' //处理文件上传
@@ -11,7 +11,7 @@ let app = express()
 app.use(logger('dev'))
 app.use(express.json())
 app.use(express.urlencoded({extended:true}))
-// app.use(cors())
+app.use(cors())
 app.use(express.static(path.resolve(__dirname, 'public')))
 
 app.post('/upload', async function (req:Request, res:Response, next:NextFunction) {
