@@ -5,8 +5,8 @@ import createError from 'http-errors'
 import cors from 'cors'
 import path  from 'path'
 import fs from 'fs-extra'
+import {PUBLIC_DIR} from './utils'
 import multiparty from 'multiparty' //处理文件上传
-const PUBLIC_DIR = path.resolve(__dirname, "public")
 let app = express()
 app.use(logger('dev'))
 app.use(express.json())

@@ -31,14 +31,7 @@ function Upload() {
     const formData = new FormData()
     formData.append('chunk', currentFile) // 添加文件。字段名chunk 
     formData.append('filename', currentFile.name)
-
-    let results = await request({
-      url:'/get',
-      method:'get',
-    })
-    console.log(results);
-    
-
+ 
     let result = await request({
       url:'/upload',
       method:'post',
@@ -55,7 +48,7 @@ function Upload() {
         <Button type="primary" onClick={handleUpload}>上传</Button>
       </Col>
       <Col span={12}>
-        {objectURL && <img src={objectURL} style={{width:100}} />}
+        {objectURL && <img alt='图片' src={objectURL} style={{width:100}} />}
       </Col>
     </Row>
   )
