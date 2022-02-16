@@ -89,14 +89,22 @@ function Upload() {
       url: `/verify/${filename}`
     })
   }
+  let totalPercent = partList.length > 0 ? Number((partList.reduce((acc:number, curr:Part) => acc + curr.percent!, 0) / (partList.length*100)).toFixed(2)) * 100:0
   async function uploadParts(partList:Part[], filename:string) {
     let {needUpload, uploadList} = await verify(filename)
     if (!needUpload) {
+      partList.forEach((part:Part) => {
+        part.percent = 100
+      })
+      setPartList([...partList]);
      return  message.success('秒传成功')
     }
     let requests = createRequests(partList, uploadList, filename)
     await Promise.all(requests)
     await request({url:`/merge/${filename}`})
+
+    message.success('上传成功')
+
   }
   async function handleUpload() {
     setHashPercent(0)
@@ -123,7 +131,6 @@ function Upload() {
     setPartList(partList)
     await uploadParts(partList, filename)
     // reset()
-    message.success('上传成功')
   }
   function handlePause() {
     setUploadStatus(UploadStatus.PAUSE)
@@ -151,7 +158,7 @@ function Upload() {
       }
     }
   ]
-  let totalPercent = partList.length > 0 ? Number((partList.reduce((acc:number, curr:Part) => acc + curr.percent!, 0) / (partList.length*100)).toFixed(2)) * 100:0
+  
   let uploadProgress = uploadStatus!==UploadStatus.INIT? (
     <>
     <Row>

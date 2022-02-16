@@ -20,10 +20,10 @@ app.get('/verify/:filename', async (req:Request, res:Response) => {
     let filePath = path.resolve(PUBLIC_DIR, filename)
     let existFile = await fs.pathExists(filePath)
     if (existFile) {
-        return{
+        return res.json({
             success:true,
             needUpload: false
-        }
+        })
     }
 
     let tempDir = path.resolve(TEMP_DIR, filename)
