@@ -60,6 +60,9 @@ function request(options: any) {
             xhr.setRequestHeader(key, options.headers[key])
         }
         xhr.responseType = 'json';
+        if (options.onProgress) {
+            xhr.upload.onprogress = options.onProgress
+        }
         xhr.onreadystatechange = () => {
             if (xhr.readyState === 4) {
                 if (/(2|3)\d{2}/.test('' + xhr.status)) {
@@ -68,6 +71,9 @@ function request(options: any) {
                     reject(xhr.response);
                 }
             }
+        }
+        if (options.setXhr) {
+            options.setXhr(xhr)
         }
         xhr.send(options.data);
     });

@@ -7,13 +7,13 @@ self.onmessage = async (event) => {
   let percent = 0 //总体计算hash的百分比
   let perSize = 100 / partList.length //每计算完一个part相当于完成了百分之几 
   let buffers = await Promise.all(partList.map(({chunk}) => new Promise(function (resolve) {
-    const reader = new FileReader()
-    reader.readAsArrayBuffer(chunk)
-    reader.onload = function (event) {
+    // const reader = new FileReader()
+    // reader.readAsArrayBuffer(chunk)
+    // reader.onload = function (event) {
       percent += perSize
       self.postMessage({percent:Number(percent.toFixed(2))})
-      resolve(event.target.result)
-    }
+      resolve(chunk.arrayBuffer())
+    // }
   })))
   buffers.forEach(buffer => spark.append(buffer))
   self.postMessage({percent:100, hash: spark.end()})

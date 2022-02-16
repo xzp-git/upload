@@ -5,7 +5,7 @@ import createError from 'http-errors'
 import cors from 'cors'
 import path  from 'path'
 import fs from 'fs-extra'
-import { mergeChunks, TEMP_DIR} from './utils'
+import { mergeChunks, TEMP_DIR, PUBLIC_DIR} from './utils'
 let app = express()
 app.use(logger('dev'))
 app.use(express.json())
@@ -13,9 +13,42 @@ app.use(express.urlencoded({extended:true}))
 app.use(cors())
 app.use(express.static(path.resolve(__dirname, 'public')))
 
+app.get('/verify/:filename', async (req:Request, res:Response) => {
+    let {filename} = req.params
 
-app.post('/upload/:filename/:chunk_name', async function (req:Request, res:Response, _next:NextFunction) {
+    //验证的时候如果存在这个文件的话，直接return
+    let filePath = path.resolve(PUBLIC_DIR, filename)
+    let existFile = await fs.pathExists(filePath)
+    if (existFile) {
+        return{
+            success:true,
+            needUpload: false
+        }
+    }
+
+    let tempDir = path.resolve(TEMP_DIR, filename)
+    let exist = await fs.pathExists(tempDir)
+    let uploadList:any[] = []
+    if (exist) {
+        uploadList = await fs.readdir(tempDir)
+        uploadList = await Promise.all(uploadList.map(async (filename:string) => {
+            let stat = await fs.stat(path.resolve(tempDir, filename))
+            return {
+                filename,
+                size: stat.size
+            }
+        }))
+    }
+    res.json({
+        success:true,
+        needUpload:true,
+        uploadList //已经上传的文件例表
+    })
+})
+
+app.post('/upload/:filename/:chunk_name/:start', async function (req:Request, res:Response, _next:NextFunction) {
     let {filename, chunk_name} = req.params
+    let start:number = Number(req.params.start)
     let chunk_dir = path.resolve(TEMP_DIR, filename)
     let exist = await fs.pathExists(chunk_dir)
     if (!exist) {
@@ -23,10 +56,16 @@ app.post('/upload/:filename/:chunk_name', async function (req:Request, res:Respo
     }
     let chunkFilePath = path.resolve(chunk_dir, chunk_name)
     //falgs append 后面断点续传
-    let ws = fs.createWriteStream(chunkFilePath, {start:0, flags: 'a'})
+    let ws = fs.createWriteStream(chunkFilePath, {start, flags: 'a'})
     req.on('end', () => {
         ws.close()
         res.json({success:true})
+    })
+    req.on('error',() => {
+        ws.close()
+    })
+    req.on('close',() => {
+        ws.close()
     })
     req.pipe(ws)
     

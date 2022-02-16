@@ -1,4 +1,4 @@
-import { Row, Col, Input, Button, message, Progress } from 'antd'
+import { Row, Col, Input, Button, message, Progress, Table } from 'antd'
 import React, { ChangeEvent, useEffect, useState } from 'react'
 import {request} from './utils'
 const DEFAULT_SIZE = 1024 * 1024 * 100 
@@ -7,8 +7,21 @@ interface Part {
   size:number
   filename?:string
   chunk_name?:string
+  loaded?:number
+  percent?:number
+  xhr?:XMLHttpRequest
+}
+interface Upload {
+  filename:string
+  size:number
+}
+enum UploadStatus{
+  INIT,
+  PAUSE,
+  UPLOADING
 }      
 function Upload() {
+  let [uploadStatus, setUploadStatus] = useState<UploadStatus>(UploadStatus.INIT)
   let [currentFile, setCurrentFile] = useState<File>()
   let [objectURL, setObjectURL] = useState<string>('')
   let [hashPercent, setHashPercent] = useState<number>(0)
@@ -42,20 +55,46 @@ function Upload() {
       }
     })
   }
-  function createRequests(partList: Part[]) {
-    return partList.map((part:Part) => request({
-      url:`/upload/${part.filename}/${part.chunk_name}`,
+  function createRequests(partList: Part[], uploadList: Upload[], filename:string) {
+
+    return  partList.filter(
+      (part:Part) => {
+        let uploadFile = uploadList.find(item => item.filename === part.chunk_name)
+        if (!uploadFile) {
+          part.loaded = 0 //已经上传的字节数0
+          part.percent = 0//已经上传的百分比就是0 分片的上传
+          return true
+        }
+        if (uploadFile.size < part.size) {
+          part.loaded = uploadFile.size
+          part.percent = Number((part.loaded / part.size * 100).toFixed(2)); //已经上传的百分比
+          return true
+        }
+        return false
+      }
+    ).map((part:Part) => request({
+      url:`/upload/${part.filename}/${part.chunk_name}/${part.loaded}`,
       method:'POST',
       headers:{'Content-Type':'application/octet-stream'},
-      data:part.chunk,
+      data:part.chunk.slice(part.loaded),
+      setXhr: (xhr: XMLHttpRequest) => part.xhr = xhr,
       onProgress: (event: ProgressEvent) => { 
-          part.percent = event.loaded / part.chunk.size * 100;
+          part.percent = Number(((part.loaded! + event.loaded )/ part.chunk.size * 100).toFixed(2));
           setPartList([...partList]);
       }
     }))
   }
-  async function upoadParts(partList:Part[], filename:string) {
-    let requests = createRequests(partList)
+  async function verify(filename: string):Promise<any> {
+    return await request({
+      url: `/verify/${filename}`
+    })
+  }
+  async function uploadParts(partList:Part[], filename:string) {
+    let {needUpload, uploadList} = await verify(filename)
+    if (!needUpload) {
+     return  message.success('秒传成功')
+    }
+    let requests = createRequests(partList, uploadList, filename)
     await Promise.all(requests)
     await request({url:`/merge/${filename}`})
   }
@@ -68,7 +107,7 @@ function Upload() {
     if (!allowUpload(currentFile)) {
       return message.error('不支持此类文件的上传')
     }
-
+    setUploadStatus(UploadStatus.UPLOADING)
     //分片上传
     let partList: Part[] = createChunks(currentFile)
     //先计算这个对象哈希值 秒传的功能，通过webworker子进程来去计算哈希
@@ -82,21 +121,88 @@ function Upload() {
       item.chunk_name = `${filename}-${index}`
     })
     setPartList(partList)
-    await upoadParts(partList, filename)
+    await uploadParts(partList, filename)
+    // reset()
     message.success('上传成功')
   }
+  function handlePause() {
+    setUploadStatus(UploadStatus.PAUSE)
+    partList.forEach((part:Part) => part.xhr && part.xhr.abort())
+  }
 
-  return(
+  async function handleResume() {
+    setUploadStatus(UploadStatus.UPLOADING)
+    await uploadParts(partList, filename)
+  }
+  const columns = [
+    {
+      title:'切片名称',
+      dataIndex:'chunk_name',
+      key:'chunk_name',
+      width:'20%'
+    },
+    {
+      title:'进度',
+      dataIndex:'percent',
+      key:'percent',
+      width:'80%',
+      render:(value:number) => {
+        return <Progress strokeColor={{'0%': '#108ee9','100%': '#87d068',}} percent={value} />
+      }
+    }
+  ]
+  let totalPercent = partList.length > 0 ? Number((partList.reduce((acc:number, curr:Part) => acc + curr.percent!, 0) / (partList.length*100)).toFixed(2)) * 100:0
+  let uploadProgress = uploadStatus!==UploadStatus.INIT? (
+    <>
     <Row>
-      <Col span={12}>
-        <Input type='file' style={{width:300}} onChange={handleChange}></Input>
-        <Button type="primary" onClick={handleUpload}>上传</Button>
-        <Progress strokeColor={{'0%': '#108ee9','100%': '#87d068',}} percent={hashPercent} />
-      </Col>
-      <Col span={12}>
-        {objectURL && <img alt='图片' src={objectURL} style={{width:100}} />}
-      </Col>
-    </Row>
+        <Col span={4}>
+          正在解析文件:
+        </Col>
+        <Col span={20}>
+          <Progress strokeColor={{'0%': '#108ee9','100%': '#87d068',}} percent={hashPercent}></Progress>
+        </Col>
+        <Col span={4}>
+          总进度:
+        </Col>
+        <Col span={20}>
+          <Progress strokeColor={{'0%': '#108ee9','100%': '#87d068',}} percent={totalPercent}></Progress>
+        </Col>
+      </Row>
+      <Table
+        columns={columns}
+        dataSource={partList}
+        rowKey={row => row.chunk_name!}
+      />
+    </>
+  ):null
+  function reset() {
+    setUploadStatus(UploadStatus.INIT)
+    setHashPercent(0)
+    setPartList([])
+    setFilename('')
+  }
+  return(
+    <>
+      <Row>
+        <Col span={12}>
+          <Input type='file' style={{width:300}} onChange={handleChange}></Input>
+          {
+            uploadStatus === UploadStatus.INIT &&  <Button type="primary" onClick={handleUpload} style={{marginLeft: 10}}>上传</Button>
+          }
+          {
+            uploadStatus === UploadStatus.UPLOADING && <Button type="primary" onClick={handlePause} style={{marginLeft: 10}}>暂停</Button>
+          }
+          {
+            uploadStatus === UploadStatus.PAUSE && <Button type="primary" onClick={handleResume}style={{marginLeft: 10}}>恢复</Button>
+          }
+        </Col>
+        <Col span={12}>
+          {objectURL && <img alt='图片' src={objectURL} style={{width:100}} />}
+        </Col>
+      </Row>
+      
+      {uploadProgress}
+    </>
   )
 }
 
@@ -105,7 +211,7 @@ function createChunks(file: File):Part[] {
   let partList:Part[] = []
   while(current < file.size){
     let chunk = file.slice(current, current + DEFAULT_SIZE) 
-    partList.push({chunk, size: chunk.size})
+    partList.push({chunk, size: chunk.size, loaded:0, percent:0})
     current += DEFAULT_SIZE
   }
   return partList
@@ -128,4 +234,5 @@ function allowUpload(file: File) {
 
   return isValidFileType && isLessThan2G
 }
+
 export default Upload
